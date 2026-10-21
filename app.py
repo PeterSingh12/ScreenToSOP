@@ -1,0 +1,407 @@
+
+from __future__ import annotations
+
+import threading
+import time
+import uuid
+from pathlib import Path
+
+import streamlit as st
+
+from pipeline.capabilities import DIAGNOSTIC_ONLY, capability_status
+from pipeline.config import (
+    DEFAULT_PROFILE,
+    PROFILES,
+    estimate_job_cost,
+    get_profile,
+    model_name,
+    profile_to_dict,
+)
+from pipeline.runtime_config import has_vision_model_config
+from storage.jobs import create_job, get_job, init_db, list_jobs
+from worker import run_job
+
+
+BASE_DIR = Path(__file__).resolve().parent
+JOBS_DIR = BASE_DIR / "jobs"
+DB_PATH = BASE_DIR / "storage" / "jobs.sqlite3"
+
+
+def _start_worker(job_id: str, job_dir: Path) -> None:
+    thread = threading.Thread(
+        target=run_job,
+        args=(job_id, job_dir, DB_PATH),
+        daemon=True,
+    )
+    thread.start()
+
+
+def _format_status(job: dict) -> str:
+    progress = int(float(job.get("progress") or 0) * 100)
+    message = job.get("message") or job.get("status", "")
+    return f"{progress}% - {message}"
+
+
+def main() -> None:
+    st.set_page_config(page_title="Video2SOP Fast Mode", layout="wide")
+    init_db(DB_PATH)
+    JOBS_DIR.mkdir(parents=True, exist_ok=True)
+
+    st.title("Video2SOP Fast Mode")
+    st.caption("Upload a screen recording and generate a screenshot-backed SOP DOCX.")
+
+    capabilities = capability_status()
+
+    with st.sidebar:
+        st.subheader("Configuration")
+        model = model_name()
+        st.text_input("Ollama vision model", value=model, disabled=True)
+
+        if capabilities["ollama_configured"]:
+            st.write(
+                "Ollama:",
+                f"configured from {capabilities.get('ollama_config_source', 'configuration')}",
+            )
+        else:
+            st.write("Ollama:", "not configured")
+
+        ocr = capabilities.get("ocr_status") or {}
+        st.write(
+            "OCR:",
+            "available" if capabilities["ocr_available"] else "unavailable",
+        )
+        if ocr.get("cmd"):
+            st.caption(f"Tesseract: {ocr.get('cmd')}")
+
+        st.write("Mode:", capabilities["generation_mode"].replace("_", " "))
+
+    st.subheader("Process details")
+    process_name = st.text_input(
+        "Process name",
+        placeholder="Example: Vendor invoice review and export",
+    )
+
+    col_meta_a, col_meta_b = st.columns(2)
+    with col_meta_a:
+        department_notes = st.text_input(
+            "Department / system notes",
+            placeholder="Example: AP team, SAP + Excel",
+        )
+    with col_meta_b:
+        target_audience = st.text_input("Target audience", value="New employee")
+
+    profile_name = st.selectbox(
+        "Quality profile",
+        options=list(PROFILES.keys()),
+        index=list(PROFILES.keys()).index(DEFAULT_PROFILE),
+        help=(
+            "Choose the balance between processing speed, image coverage, "
+            "and local Ollama inference calls."
+        ),
+    )
+
+    profile = get_profile(profile_name)
+    ollama_ready = has_vision_model_config()
+    estimate = estimate_job_cost(profile, use_ollama=ollama_ready)
+
+    st.caption(
+        "Estimated maximum workload: "
+        f"{estimate['max_calls']} Ollama calls, "
+        f"{estimate['image_count']} image inputs. "
+        f"{estimate['pricing_note']}"
+    )
+
+    upload = st.file_uploader(
+        "Upload screen recording",
+        type=["mp4", "mov", "mkv", "avi"],
+    )
+
+    diagnostic_override = False
+    if capabilities["generation_mode"] == DIAGNOSTIC_ONLY:
+        st.error(
+            "Production-quality vision generation is unavailable because "
+            "Ollama vision and usable OCR are both unavailable. "
+            "You can generate a diagnostic draft instead."
+        )
+        diagnostic_override = st.checkbox("Generate diagnostic draft anyway")
+
+    col_a, col_b = st.columns([1, 3])
+    with col_a:
+        process = st.button(
+            "Generate SOP",
+            type="primary",
+            disabled=(
+                upload is None
+                or (
+                    capabilities["generation_mode"] == DIAGNOSTIC_ONLY
+                    and not diagnostic_override
+                )
+            ),
+        )
+
+    if process and upload is not None:
+        job_id = uuid.uuid4().hex[:12]
+        job_dir = JOBS_DIR / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        input_path = job_dir / "input.mp4"
+        with input_path.open("wb") as handle:
+            handle.write(upload.getbuffer())
+
+        metadata = {
+            "filename": upload.name,
+            "upload_name": upload.name,
+            "process_name": process_name.strip(),
+            "process_name_source": "user" if process_name.strip() else "derived",
+            "department_notes": department_notes.strip(),
+            "target_audience": target_audience.strip() or "New employee",
+            "quality_profile": profile_to_dict(profile),
+            "cost_estimate": estimate,
+            "requested_generation_mode": capabilities["generation_mode"],
+            "diagnostic_override": diagnostic_override,
+        }
+
+        create_job(DB_PATH, job_id, str(input_path), meta=metadata)
+        st.session_state["active_job_id"] = job_id
+        _start_worker(job_id, job_dir)
+        st.success(f"Job started: {job_id}")
+
+    active_job_id = st.session_state.get("active_job_id")
+    if active_job_id:
+        job = get_job(DB_PATH, active_job_id)
+
+        if job:
+            st.subheader("Current job")
+            st.progress(
+                float(job.get("progress") or 0),
+                text=_format_status(job),
+            )
+
+            status = job.get("status")
+
+            if status in {"queued", "running"}:
+                time.sleep(2)
+                st.rerun()
+
+            elif status == "complete":
+                if job.get("error"):
+                    st.warning(
+                        "The SOP was produced using fallback handling. "
+                        "Review low-confidence steps."
+                    )
+
+                output_path = job.get("output_path")
+                if output_path and Path(output_path).exists():
+                    with open(output_path, "rb") as handle:
+                        st.download_button(
+                            "Download SOP DOCX",
+                            data=handle,
+                            file_name=f"video2sop_{active_job_id}.docx",
+                            mime=(
+                                "application/vnd.openxmlformats-officedocument."
+                                "wordprocessingml.document"
+                            ),
+                        )
+
+                    meta = job.get("meta") or {}
+                    cleanup_report = meta.get("cleanup_report") or {}
+
+                    readiness_labels = {
+                        "demo_ready": "Demo-ready",
+                        "needs_review": "Needs manual review",
+                        "not_ready": "Not ready",
+                    }
+
+                    st.write(f"Steps: {meta.get('steps', 'unknown')}")
+
+                    if cleanup_report:
+                        quality_cols = st.columns(6)
+                        quality_cols[0].metric(
+                            "Original steps",
+                            cleanup_report.get("step_count_before", "unknown"),
+                        )
+                        quality_cols[1].metric(
+                            "Cleaned steps",
+                            cleanup_report.get("step_count_after", "unknown"),
+                        )
+                        quality_cols[2].metric(
+                            "Removed",
+                            cleanup_report.get("removed_count", 0),
+                        )
+                        quality_cols[3].metric(
+                            "Merged",
+                            cleanup_report.get("merged_count", 0),
+                        )
+                        quality_cols[4].metric(
+                            "Coverage",
+                            cleanup_report.get(
+                                "coverage_ratio_after_cleanup",
+                                "unknown",
+                            ),
+                        )
+                        quality_cols[5].metric(
+                            "Quality",
+                            cleanup_report.get("quality_score", "unknown"),
+                        )
+
+                        ollama_succeeded = cleanup_report.get(
+                            "ollama_calls_succeeded",
+                            meta.get("ollama_calls_succeeded", 0),
+                        )
+                        ollama_attempted = cleanup_report.get(
+                            "ollama_calls_attempted",
+                            meta.get("ollama_calls_attempted", 0),
+                        )
+
+                        st.caption(
+                            "Generation mode: "
+                            f"{cleanup_report.get('generation_mode', meta.get('generation_mode', 'unknown')).replace('_', ' ')}; "
+                            "OCR text frames: "
+                            f"{cleanup_report.get('ocr_non_empty_count', meta.get('ocr_non_empty_count', 0))}; "
+                            f"Ollama calls: {ollama_succeeded}/{ollama_attempted}"
+                        )
+
+                        readiness = cleanup_report.get(
+                            "readiness",
+                            "needs_review",
+                        )
+                        label = readiness_labels.get(readiness, readiness)
+                        chrono_ok = cleanup_report.get("chronological_order_valid")
+                        chrono_count = cleanup_report.get(
+                            "chronological_violations_count",
+                            0,
+                        )
+
+                        if readiness == "demo_ready":
+                            st.success(label)
+                        elif readiness == "needs_review":
+                            st.warning(label)
+                        else:
+                            st.error(label)
+
+                        if chrono_ok is not None:
+                            st.caption(
+                                "Chronology: "
+                                + ("valid" if chrono_ok else "needs repair")
+                                + f" ({chrono_count} violation"
+                                + ("" if chrono_count == 1 else "s")
+                                + " detected before cleanup)"
+                            )
+
+                        if cleanup_report.get("event_segments"):
+                            st.caption(
+                                f"Coverage: {cleanup_report.get('step_count_after', 'unknown')} "
+                                f"cleaned steps from "
+                                f"{cleanup_report.get('event_segments')} event segments."
+                            )
+
+                        detail_cols = st.columns(2)
+                        detail_cols[0].metric(
+                            "Passive filler removed",
+                            cleanup_report.get("passive_filler_removed_count", 0),
+                        )
+                        detail_cols[1].metric(
+                            "Operational checkpoints kept",
+                            cleanup_report.get("operational_checkpoint_count", 0),
+                        )
+
+                        semantic_cols = st.columns(3)
+                        semantic_cols[0].metric(
+                            "Semantic coverage",
+                            cleanup_report.get("semantic_coverage_score", "unknown"),
+                        )
+                        semantic_cols[1].metric(
+                            "Operational actions",
+                            cleanup_report.get("operational_action_count", 0),
+                        )
+                        semantic_cols[2].metric(
+                            "Generic reviews",
+                            cleanup_report.get("generic_review_count", 0),
+                        )
+
+                        runtime_cols = st.columns(3)
+                        runtime_cols[0].metric(
+                            "Step density",
+                            cleanup_report.get("workflow_density_score", "unknown"),
+                        )
+                        runtime_cols[1].metric(
+                            "Phase errors",
+                            cleanup_report.get("phase_error_count", 0),
+                        )
+
+                        timings = meta.get("stage_timings") or {}
+                        if timings:
+                            slowest = max(
+                                timings.items(),
+                                key=lambda item: float(item[1] or 0),
+                            )
+                            runtime_cols[2].metric(
+                                "Slowest stage",
+                                f"{slowest[0]} {slowest[1]}s",
+                            )
+
+                        blockers = cleanup_report.get("readiness_blockers") or []
+                        if blockers:
+                            st.caption("Top blockers")
+                            for blocker in blockers[:5]:
+                                st.write(f"- {blocker}")
+
+                    segmentation = meta.get("segmentation") or {}
+                    if segmentation:
+                        diag_cols = st.columns(3)
+                        diag_cols[0].metric(
+                            "Screen states",
+                            segmentation.get("screen_states", "unknown"),
+                        )
+                        diag_cols[1].metric(
+                            "Boundary candidates",
+                            segmentation.get("boundary_candidates", "unknown"),
+                        )
+                        diag_cols[2].metric(
+                            "Event segments",
+                            segmentation.get("event_segments", "unknown"),
+                        )
+
+                        threshold = segmentation.get("threshold")
+                        if threshold is not None:
+                            st.caption(
+                                f"Adaptive boundary threshold: {float(threshold):.4f}"
+                            )
+
+                    if meta.get("warnings"):
+                        st.warning(" ".join(meta["warnings"]))
+
+            elif status == "failed":
+                st.error("The job failed before a DOCX could be produced.")
+                with st.expander("Error details"):
+                    st.code(job.get("error") or "Unknown error")
+
+    st.subheader("Recent jobs")
+    rows = list_jobs(DB_PATH, limit=10)
+
+    if rows:
+        for job in rows:
+            cols = st.columns([2, 2, 4, 2])
+            cols[0].write(job["id"])
+            cols[1].write(job["status"])
+            cols[2].write(job.get("message", ""))
+
+            output_path = job.get("output_path")
+            if output_path and Path(output_path).exists():
+                with open(output_path, "rb") as handle:
+                    cols[3].download_button(
+                        "Download",
+                        data=handle,
+                        file_name=f"video2sop_{job['id']}.docx",
+                        mime=(
+                            "application/vnd.openxmlformats-officedocument."
+                            "wordprocessingml.document"
+                        ),
+                        key=f"download_{job['id']}",
+                    )
+    else:
+        st.info("No jobs yet.")
+
+
+if __name__ == "__main__":
+    main()

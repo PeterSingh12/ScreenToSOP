@@ -1,0 +1,47 @@
+# Secrets and environment variables
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Generated recordings and outputs
+*.mp4
+*.webm
+*.mov
+*.wav
+*.mp3
+jobs/
+artifacts/
+uploads/
+outputs/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# OS/editor files
+.DS_Store
+.vscode/
+.idea/
+
+# Root-level Node dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment secrets
+.vercel/
