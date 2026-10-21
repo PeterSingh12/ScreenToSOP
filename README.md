@@ -1,75 +1,199 @@
-# Video2SOP Fast Mode
+# ScreenToSOP — Screen Recording to Standard Operating Procedure
 
-Video2SOP is a local-first application that turns a screen recording into a screenshot-backed SOP in DOCX and Markdown formats, with a JSON workflow API. It is built for process documentation, not generic video analysis.
+ScreenToSOP is a full-stack application that converts screen recordings into screenshot-backed Standard Operating Procedures (SOPs) in DOCX and Markdown formats, with a structured JSON workflow API.
 
-The current implementation is local-first:
+Built for A3i-Accel's **Assignment 5: Screen-to-SOP Agent — Recording to Procedure Document**, the project aims to turn recorded workflows into reusable process documentation that people can follow, review, and use to identify potential automation opportunities.
 
-- OpenCV extracts dense frames for metric scoring and selected frames for evidence.
-- A deterministic segmentation engine detects screen-state boundaries.
-- OCR enriches segment evidence when native Tesseract is installed. The app resolves `TESSERACT_CMD`, PATH, and common Windows installation paths.
-- Rule-based classification and deterministic cleanup reduce noise, passive filler, and weak duplicates.
-- Local Ollama vision generation can produce evidence-backed SOP wording when inference succeeds. If vision generation fails, the app can fall back to an OCR draft when OCR text is available or a diagnostic draft when semantic evidence is unavailable.
-- `.env` and optional Streamlit secrets are loaded automatically.
-- The final DOCX includes screenshots, confidence indicators, timeline-safe phase sections, and a cleanup quality appendix.
+## Why ScreenToSOP?
 
-## Product Promise
+Organizations often rely on employees to explain how business processes work. These explanations may be recorded during meetings or captured as screen recordings, but converting them into clear, reusable documentation takes time.
 
-Turn a process recording into a professional SOP in minutes.
+ScreenToSOP automates much of this documentation process by analyzing screen recordings, identifying screen-state changes, extracting visible text, organizing workflow events, and generating structured procedures with screenshot evidence.
 
-The product supports the following modes:
+For A3i-Accel, this creates a foundation for capturing process knowledge and identifying repeatable tasks that may be suitable for automation through an A3i App, Ant, or Agent.
 
-- **Ollama vision mode:** attempts vision-based step generation and verification using the configured local model.
-- **OCR draft mode:** uses locally extracted text to create a draft when vision generation is unavailable or unsuccessful.
-- **Diagnostic draft mode:** produces diagnostic output when semantic evidence is insufficient. The document requires review.
+## Features
 
-Model configuration does not guarantee successful inference. Generated instructions must be checked against their screenshot evidence.
+- **Video processing:** Extracts frames from uploaded screen recordings using OpenCV and supporting video tools.
+- **Screen-state segmentation:** Detects visual changes and identifies candidate boundaries between workflow steps.
+- **OCR-based understanding:** Uses Tesseract to extract visible text from screenshots.
+- **Workflow classification:** Applies rule-based classification and cleanup to reduce irrelevant events, duplicate steps, and generic instructions.
+- **AI-assisted generation:** Supports optional local vision-model generation through Ollama.
+- **Fallback generation:** Produces OCR-based drafts or diagnostic output when vision generation fails or the available evidence is insufficient.
+- **Quality checks:** Evaluates generated steps and surfaces warnings, confidence indicators, and readiness information.
+- **Multiple output formats:** Generates Word SOPs, Markdown documentation, and structured workflow JSON.
+- **Screenshot-backed procedures:** Associates workflow steps with visual evidence where available.
+- **REST API:** Exposes a FastAPI endpoint for submitting recordings and retrieving generated results.
+- **React frontend:** Provides a web interface for uploading recordings and reviewing generated procedures.
+- **Streamlit interface:** Retains an alternative local interface.
+- **Automated tests:** Includes tests for implemented API and pipeline functionality.
 
-## What the App Produces
+## Technology Stack
 
-The generated DOCX includes:
+| Component | Technology | Purpose |
+|---|---|---|
+| Backend API | Python, FastAPI | Accept recordings and expose workflow results |
+| Frontend | React, Vite, JavaScript | User interface for submitting recordings and reviewing outputs |
+| Video processing | OpenCV, FFmpeg | Frame extraction and video processing |
+| OCR | Tesseract, pytesseract | Extract visible text from screenshots |
+| Workflow segmentation | Python, deterministic rules | Detect screen-state changes and candidate workflow events |
+| AI generation | Ollama with a compatible vision model | Generate step descriptions when inference succeeds |
+| Document generation | python-docx | Export procedures to Word |
+| Structured output | Markdown, JSON | Produce portable documentation and machine-readable workflows |
+| Testing | pytest | Validate tested application and pipeline behavior |
 
-- `SOP: {process_name}` title
-- Summary, prerequisites, and assumptions
-- Chronological steps rendered in timeline phase sections
-- Screenshot evidence for each step
-- System, action, expected output, and confidence
-- Low-confidence review checklist
-- Cleanup and quality report appendix
-- Job metadata appendix
+## How It Works
 
-The app does not pad weak runs with invented steps. If the recording only supports a short SOP, the output stays short and records warnings rather than pretending the process was fully captured.
+1. **Upload:** The user submits a screen recording along with process metadata.
+2. **Frame extraction:** The pipeline extracts frames and computes visual information from the recording.
+3. **Segmentation:** Screen-state changes are analyzed to identify candidate workflow events.
+4. **OCR:** Tesseract extracts text visible in relevant frames.
+5. **Classification:** Rule-based logic organizes events and reduces irrelevant content.
+6. **Instruction generation:** The configured Ollama vision model attempts to generate evidence-backed instructions.
+7. **Fallback handling:** If vision generation fails or evidence is insufficient, the application can produce an OCR-derived draft or diagnostic output.
+8. **Validation and cleanup:** Generated steps are checked and cleaned up, and quality issues are surfaced.
+9. **Document export:** The application generates DOCX and Markdown SOPs alongside structured workflow JSON.
+10. **Review:** The user inspects the generated steps, screenshots, warnings, and readiness before using or sharing the procedure.
 
-## Current Pipeline
+The application avoids padding weak results with invented steps. When the recording does not provide sufficient evidence, the resulting procedure may be shorter and require human review.
 
-- Video upload and local storage
-- Dense frame extraction
-- Adaptive screen-state segmentation
-- OCR preprocessing and extraction
-- Rule-based system classification
-- Local vision step generation when available
-- OCR-based and diagnostic fallback generation
-- Risky-step verification
-- Deterministic SOP cleanup and quality scoring
-- DOCX export
+## Architecture
 
-## Requirements
+```text
+Screen Recording
+       |
+       v
+React Frontend
+       |
+       v
+FastAPI Backend
+POST /record-to-sop
+       |
+       v
+Video Processing
+OpenCV / FFmpeg
+       |
+       v
+Screen-State Segmentation
+       |
+       v
+OCR Extraction
+Tesseract
+       |
+       v
+Event Classification
+and Evidence Preparation
+       |
+       v
+Instruction Generation
+       |
+       +--------------------+
+       |                    |
+       v                    v
+Ollama Vision         OCR / Diagnostic
+Generation               Fallback
+       |                    |
+       +--------------------+
+                  |
+                  v
+        Validation and Cleanup
+                  |
+                  v
+           Quality Scoring
+                  |
+         +--------+--------+
+         |        |        |
+         v        v        v
+       DOCX    Markdown   Workflow
+                           JSON
+```
 
-- Python 3.10 or newer, subject to dependency compatibility
-- `streamlit`
-- `opencv-python`
-- `numpy`
-- `pillow`
-- `python-docx`
-- `pytesseract`
-- `python-dotenv`
-- Native Tesseract OCR installed on the system
-- Ollama and a compatible local vision model for optional vision inference
+## Generated Outputs
 
-Python package dependencies are listed in `requirements.txt`.
+### 1. Word SOP (`sop.docx`)
 
-## Setup
+The generated document can include:
 
-Create and activate a virtual environment:
+- Process title.
+- Summary, purpose, prerequisites, and assumptions.
+- Numbered steps arranged chronologically.
+- Screenshot evidence associated with workflow steps.
+- System and action descriptions.
+- Expected outputs and confidence indicators where available.
+- Low-confidence review checklist.
+- Cleanup and quality report appendix.
+- Job metadata.
+
+### 2. Markdown SOP (`sop.md`)
+
+A Markdown version of the procedure supports readable documentation, version control, and sharing. It includes step content and screenshot references where available.
+
+### 3. Workflow JSON
+
+The API returns structured workflow data, including job metadata, steps, warnings, readiness, generation mode, and artifact URLs.
+
+The assignment specifies the following fields for each step:
+
+- `step`
+- `timestamp`
+- `action`
+- `ui_element`
+- `screenshot_url`
+- `note`
+
+The exact response schema should be verified against the implemented API.
+
+## REST API
+
+### Health Check
+
+`GET /health`
+
+Checks whether the backend is responding.
+
+### Generate an SOP
+
+`POST /record-to-sop`
+
+Content type: `multipart/form-data`
+
+The endpoint accepts a screen recording and process metadata.
+
+| Field | Description |
+|---|---|
+| `video` | Screen recording file |
+| `process_name` | Name of the workflow |
+| `target_audience` | Intended reader of the SOP |
+| `department_notes` | Optional context about the process |
+| `quality_profile` | Processing profile |
+
+Supported upload extensions include MP4, MOV, M4V, WebM, MKV, and AVI. The configured upload limit is 250 MiB.
+
+The response contains the job ID, generated workflow steps, readiness and generation-mode labels, warnings, and artifact download URLs.
+
+### Artifact Endpoints
+
+```text
+/jobs/{job_id}/sop.docx
+/jobs/{job_id}/sop.md
+/jobs/{job_id}/workflow.json
+```
+
+Screenshot and other artifact URLs depend on the generated job structure and the implemented serving routes.
+
+The current API processes recordings synchronously. Longer recordings may keep an HTTP request open while processing completes. The current architecture is primarily intended for local demonstrations rather than high-concurrency production use.
+
+## Installation
+
+### Prerequisites
+
+- Python 3.10 or newer, subject to dependency compatibility.
+- Node.js and npm for the React frontend.
+- Tesseract OCR.
+- FFmpeg.
+- Ollama and a compatible local vision model for optional vision inference.
+
+### 1. Set Up the Python Environment
 
 ```bash
 python3 -m venv .venv
@@ -78,7 +202,7 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Install native dependencies on macOS if needed:
+### 2. Install Native Dependencies on macOS
 
 ```bash
 brew install tesseract ffmpeg
@@ -96,7 +220,7 @@ Check local prerequisites:
 python scripts/check_prereqs.py
 ```
 
-## Ollama Configuration
+### 3. Configure Ollama
 
 Create a `.env` file in the repository root:
 
@@ -107,9 +231,11 @@ OLLAMA_BASE_URL=http://localhost:11434/v1/
 TESSERACT_CMD=/opt/homebrew/bin/tesseract
 ```
 
-The `ollama` API key value is a local placeholder for the Ollama-compatible endpoint, not a hosted-service credential.
+These are example values for a local macOS setup. Adjust the model and Tesseract path to match your environment.
 
-Install the configured model if it is not already available:
+The `ollama` API key value is a local placeholder for an Ollama-compatible endpoint, not a hosted-service credential.
+
+Install the configured model if necessary:
 
 ```bash
 ollama pull qwen3-vl:4b
@@ -126,14 +252,49 @@ If Ollama is already running as a background service, do not start a second serv
 Configuration precedence:
 
 ```text
-Real environment variable > .env > Streamlit secrets > default
+Environment variables > .env > Streamlit secrets > defaults
 ```
 
-Successful model installation does not guarantee successful inference. Context limits, memory usage, image payload size, and response truncation may affect generation. When vision inference fails, the app should report fallback output honestly.
+Successful model installation does not guarantee successful inference. Context limits, memory usage, image payload size, and response truncation may affect generation.
 
-## Running the App
+Never commit `.env` or other files containing credentials to GitHub.
 
-Launch Streamlit:
+## Running the Application
+
+### 1. Start the FastAPI Backend
+
+From the repository root:
+
+```bash
+source .venv/bin/activate
+python -m uvicorn api:app --host 127.0.0.1 --port 8000
+```
+
+Health check:
+
+`http://127.0.0.1:8000/health`
+
+### 2. Start the React Frontend
+
+Open a second terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open the local URL printed by Vite, typically:
+
+`http://localhost:5173`
+
+The frontend can use `VITE_API_BASE_URL` to configure the backend URL. For local development, the default is:
+
+`http://127.0.0.1:8000`
+
+### 3. Optional Streamlit Interface
+
+The repository also includes a Streamlit interface:
 
 ```bash
 python -m streamlit run app.py
@@ -141,54 +302,37 @@ python -m streamlit run app.py
 
 Open:
 
-```text
-http://localhost:8501
-```
+`http://localhost:8501`
 
-### UI Workflow
+This is an alternative local interface, separate from the React frontend.
 
-1. Enter a process name.
-2. Optionally provide department or system notes.
-3. Select the target audience and available quality profile.
-4. Upload a recording.
-5. Start the job.
-6. Review cleanup diagnostics and readiness.
-7. Download the generated DOCX.
+## Typical User Workflow
 
-Each completed job also writes `sop.md` and `artifacts/workflow.json`. Markdown image references use paths relative to the job folder when possible.
+1. Enter the process name.
+2. Select the target audience.
+3. Add optional department or system notes.
+4. Choose an available quality profile.
+5. Upload a screen recording.
+6. Start the processing job.
+7. Review generated steps, screenshots, warnings, and readiness.
+8. Download the SOP in DOCX or Markdown format.
 
-The current interface supports recording upload. Browser-based recording should only be listed as a feature if it has been separately implemented and tested.
+Generated procedures should be reviewed whenever steps are ambiguous, screenshots do not support an instruction, or the pipeline reports insufficient evidence.
 
-## HTTP API
 
-The API processes an uploaded video synchronously and returns the workflow JSON plus artifact download URLs. For a five-minute recording, the HTTP request may remain open while processing runs.
+## Evaluation and Testing
 
-Install the API dependencies (they are also listed in `requirements.txt`):
+Run the automated test suite:
 
 ```bash
-python -m pip install -r requirements.txt
+python -m pytest -q
 ```
 
-Start the API server:
+Compile application modules:
 
 ```bash
-python -m uvicorn api:app --host 127.0.0.1 --port 8000
+python -m compileall api.py app.py worker.py pipeline storage tests scripts
 ```
-
-Health check: `GET http://127.0.0.1:8000/health`
-
-Upload a recording (replace the path with a real video):
-
-```bash
-curl -X POST http://127.0.0.1:8000/record-to-sop \
-  -F "video=@./recording.mp4" \
-  -F "process_name=Update Customer Record" \
-  -F "target_audience=New employee"
-```
-
-The response contains `job_id`, readiness and generation-mode labels, the structured `steps` array, warnings, and URLs for DOCX, Markdown, and workflow JSON. Supported upload extensions are MP4, MOV, M4V, WEBM, MKV, and AVI; the API upload limit is 250 MiB. Artifact URLs are served by the same API process. The endpoint is synchronous and intended for local demonstration, not high-concurrency production deployment.
-
-## Run a Local Demo
 
 Run the deterministic demo:
 
@@ -208,29 +352,11 @@ Evaluate a completed job:
 python scripts/evaluate_job.py jobs/<JOB_ID>
 ```
 
-Replace `<JOB_ID>` with the job directory created by the demo.
+Replace `<JOB_ID>` with the directory created by the application.
 
-## Run Tests
+Passing tests validates the tested code paths. It does not guarantee factual correctness for every recording or prove that the assignment's performance targets have been achieved.
 
-```bash
-python -m pytest -q
-```
-
-Compile the application modules:
-
-```bash
-python -m compileall app.py worker.py pipeline storage tests scripts
-```
-
-Passing tests validate the tested code paths. They do not guarantee successful vision generation or factual correctness for every recording.
-
-## Quality Profiles
-
-Profiles are defined in `pipeline/config.py`.
-
-Available profiles and their processing limits depend on the current implementation. Review `pipeline/config.py` for the exact frame limits, OCR limits, event limits, generation-call limits, and verification settings.
-
-## Job Output and Artifacts
+## Pipeline Diagnostics and Artifacts
 
 Each job is stored under:
 
@@ -238,77 +364,101 @@ Each job is stored under:
 jobs/<job_id>/
 ```
 
-Important artifacts include:
+Depending on the execution path, artifacts may include:
 
-- `input.mp4` — source recording, when retained
-- `sop.docx` — generated SOP
-- `sop.md` — Markdown SOP with equivalent step content and screenshot references
-- `artifacts/workflow.json` — final structured workflow, readiness, generation mode, and warnings
-- `artifacts/frames.json` — frame extraction information
-- `artifacts/frame_metrics.json` — per-frame visual metrics
-- `artifacts/boundary_candidates.json` — candidate boundary decisions
-- `artifacts/screen_states.json` — recurring screen-state information
-- `artifacts/event_segments.json` — segmented workflow evidence
-- `artifacts/segmentation_report.md` — segmentation diagnostics
-- `artifacts/ocr_raw.json` — OCR output
-- `artifacts/steps_generated.json` — initially generated or fallback steps
-- `artifacts/steps_validated.json` — validated steps before cleanup
-- `artifacts/sop_cleanup.json` — cleanup details and quality report
-- `artifacts/steps_final.json` — final cleaned workflow steps
+```text
+jobs/<job_id>/
+├── input.mp4
+├── sop.docx
+├── sop.md
+└── artifacts/
+    ├── workflow.json
+    ├── frames.json
+    ├── frame_metrics.json
+    ├── boundary_candidates.json
+    ├── screen_states.json
+    ├── event_segments.json
+    ├── segmentation_report.md
+    ├── ocr_raw.json
+    ├── steps_generated.json
+    ├── steps_validated.json
+    ├── sop_cleanup.json
+    └── steps_final.json
+```
 
 Not every artifact is guaranteed to exist for every run.
 
+These intermediate files help diagnose missed screen changes, OCR failures, generic instructions, low-confidence steps, and other quality issues.
+
 ## Quality and Readiness
 
-The application assigns a readiness state:
+The application uses readiness labels such as:
 
 - `demo_ready`
 - `needs_review`
 - `not_ready`
 
-Quality scoring may consider step coverage, low-confidence instructions, duplicates, generic steps, chronology violations, workflow density, long single-step segments, and phase/action plausibility.
+Quality scoring may consider step coverage, low-confidence instructions, duplicates, generic steps, chronology violations, workflow density, long segments, and action plausibility.
 
-A high semantic-coverage score is not proof that the generated instructions are correct. Compare each instruction with its screenshot evidence.
+A high semantic-coverage score is not proof that the generated instructions are correct. Each instruction should be compared with its screenshot evidence.
 
-### Local Demo Evaluation
+When vision generation fails, an OCR-derived or diagnostic draft may still be produced. Such a draft is not equivalent to a fully verified AI-generated procedure.
 
-One observed demo run produced:
+## Security and Privacy
 
-| Metric | Result |
-|---|---:|
-| Events | 6 |
-| Generated steps | 6 |
-| Validated steps | 6 |
-| Final steps | 5 |
-| OCR frames | 10 |
-| OCR frames with non-empty text | 10 |
-| Operational actions | 5 |
-| Generic review steps | 0 |
-| Phase errors | 0 |
-| Semantic coverage | 1.0 |
-| Quality score | 70 |
-| Readiness | `needs_review` |
+Screen recordings may contain confidential business information or personal data.
 
-Generation sources for this run were five OCR-derived steps and one diagnostic fallback step before cleanup.
+- Never commit credentials, `.env`, private recordings, or generated documents containing sensitive information.
+- Obtain consent before processing meeting recordings that include other participants.
+- Implement and test redaction before claiming sensitive information is automatically blurred.
+- Review generated documents for sensitive information before sharing.
+- Treat generated procedures as drafts until their accuracy has been verified.
 
-These figures describe a single local demo run, not a general benchmark.
+## Current Limitations
+
+- Fast interactions and poor-quality recordings can cause missed steps.
+- OCR depends on readable text, screen resolution, and screenshot quality.
+- Local vision-model inference may fail because of resource constraints or response limits.
+- OCR-derived instructions may not fully capture user intent.
+- Generated procedures require human review before use in sensitive or consequential processes.
+- Browser-based recording, narration transcription, and sensitive-field blurring should only be described as supported after implementation and testing.
+- Processing-time and step-coverage targets must be measured across representative recordings.
+- The synchronous API and local job storage are not sufficient on their own for a robust multi-user production deployment.
+
+## Future Work
+
+- Improve vision-model reliability and instruction grounding.
+- Implement and test browser-based recording using the Screen Capture API.
+- Add narration transcription using a suitable speech-recognition model.
+- Implement and validate sensitive-field redaction.
+- Compare generated SOPs against human-written ground truth for three sample processes.
+- Measure step coverage, task reproducibility, and processing time.
+- Improve screenshot-to-instruction traceability.
+- Improve recovery from failed model inference.
+- Harden deployment, artifact storage, and long-running job handling.
+- Explore automation-candidate extraction as a stretch goal.
 
 ## Project Structure
 
 ```text
 ScreenToSOP/
+├── api.py
 ├── app.py
 ├── worker.py
+├── frontend/
 ├── pipeline/
 ├── storage/
 ├── scripts/
 ├── tests/
 ├── docs/
 ├── requirements.txt
+├── package.json
 └── README.md
 ```
 
 ## Documentation
+
+Additional documentation is available in:
 
 - `docs/architecture.md`
 - `docs/pipeline.md`
@@ -316,39 +466,8 @@ ScreenToSOP/
 - `docs/development.md`
 - `docs/troubleshooting.md`
 - `docs/quickstart.md`
-
-## Security and Repository Hygiene
-
-Ensure `.gitignore` excludes:
-
-- `.env` and other secret-bearing environment files
-- `.streamlit/secrets.toml`
-- Uploaded recordings and screenshots
-- Generated SOP documents and job artifacts
-- SQLite databases and local logs
-- Virtual environments and cache directories
-
-Never commit credentials, private recordings, or generated documents containing sensitive information.
-
-## Known Limitations
-
-- Poor-quality recordings and fast interactions can lead to missed steps.
-- OCR depends on readable text, screen resolution, and image quality.
-- Local vision-model inference may fail because of resource constraints or response limits.
-- OCR-derived instructions may not fully capture user intent or the meaning of visual actions.
-- Generated SOPs require human review before being used for sensitive or consequential processes.
-- The application is designed for local, single-user use rather than as a hosted multi-user service.
-- Processing-time and coverage targets must be measured across representative recordings before being claimed as achieved.
-
-## Future Work
-
-- Improve local vision-model reliability.
-- Add and test browser-based recording if required.
-- Benchmark step coverage and processing time across representative recordings.
-- Improve screenshot-to-instruction traceability.
-- Expand evaluation using human-reviewed ground-truth SOPs.
-- Improve recovery and error reporting for failed model inference.
+- `docs/showcase-checklist.md`
 
 ## License
 
-Add the project's chosen license before publishing the repository.
+A project license has not yet been specified. Add the chosen license before distributing the repository publicly.
