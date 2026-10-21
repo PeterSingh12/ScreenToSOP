@@ -308,30 +308,6 @@ For a manual smoke test:
 
 Use a recording with a clear sequence of visible actions for the first test.
 
-## Evaluation and Success Criteria
-
-The assignment identifies these goals:
-
-- Capture at least 90% of the steps in a five-minute recording compared with a human-written SOP.
-- Enable a new user to complete the process using only the generated SOP.
-- Process a five-minute recording in under five minutes.
-- Protect sensitive information such as email addresses, passwords, and account numbers.
-
-These are evaluation targets, not guaranteed properties of every generated SOP.
-
-A meaningful evaluation should use three representative processes and compare each generated SOP with a human-written reference. Record at least:
-
-- Number of reference steps and generated steps
-- Reference steps successfully covered
-- Missing, duplicated, or incorrectly ordered actions
-- Accuracy and usefulness of action descriptions
-- Screenshot relevance and readability
-- Sensitive-information handling
-- Total processing time
-- Model failures, fallback behavior, and steps requiring human review
-
-Report actual measurements rather than assuming that the targets have been achieved. Inspect screenshots and generated documents manually before presenting results.
-
 ## Limitations and Future Improvements
 
 - OCR quality depends on text size, contrast, resolution, and the clarity of the recording.
